@@ -1,4 +1,4 @@
-# FFF Simulation Modules in ANSYS MAPDL and PyAnsys MAPDL
+ # FFF Simulation Modules in ANSYS MAPDL and PyAnsys MAPDL
 
 To create a Fused Filament Fabrication (FFF) simulation in ANSYS using MAPDL or PyAnsys MAPDL, the following modules and features are commonly used:
 
@@ -8,7 +8,7 @@ To create a Fused Filament Fabrication (FFF) simulation in ANSYS using MAPDL or 
 - **THERMAL**: Thermal analysis for simulating temperature distribution during printing.
 - **STRUCTURAL**: Structural analysis for stress, strain, and deformation evaluation.
 
-##Modules Used:
+## Modules Used:
 1. ansys.mapdl.core
 2. imageio
 3. matplotlib
