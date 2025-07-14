@@ -20,8 +20,12 @@ This is coupled field Trainsient Analysis with elemnent type "SOLID226"
 3. Use element activation (`EALIVE`) to simulate the extrusion process layer by layer.
 4. Apply thermal and structural loads as needed.
 5. Solve using SOLUTION.
-6. Analyze results in POST1.
+6. Analyse results in POST1.
 
-
+**Modules Used:**
+1. ansys.mapdl.core
+2. imageio
+3. matplotlib
+4. pyvista
 
 Refer to the ANSYS MAPDL and PyAnsys MAPDL documentation for detailed commands, scripting examples, and workflow customization.
