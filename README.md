@@ -1,4 +1,4 @@
- # FFF Simulation Modules in Ansys Mapdl and Pyanys
+ # FFF Simulation Modules in Ansys Mapdl and Pyansys
 
 To create a Fused Filament Fabrication (FFF) simulation in ANSYS using MAPDL or PyAnsys MAPDL, the following modules and features are commonly used:
 
