@@ -3,17 +3,15 @@ import numpy as np
 import ansys.mapdl.core
 
 
-import imageio.v2 as imageio#3d visualization
-import pyvista as pv
-import os
 import time 
-
+import imageio.v2 as imageio
 
 from ansys.mapdl.core import launch_mapdl 
 
 
 from ansys.mapdl.core.examples import vmfiles
 
+import pyvista as pv
 import os
 if os.path.exists("file.rth"):
     os.remove("file.rth")
@@ -65,7 +63,7 @@ rho_vals = [1380, 1375, 1370, 1365, 1360, 1355]
 mapdl.mpdata("DENS", mat_id, "", *rho_vals)
 
 
- # Yield strength in Pa
+# Yield strength in Pa
 
 emisivity = 0.85
 mapdl.mp("EMIS",mat_id,emisivity)
@@ -128,7 +126,7 @@ bed_y = 0.6
 bed_z = 0.02
 
 # Cube dimensions
-cube_dim = 0.01
+cube_dim = 0.04
 cube_z_offset = bed_z # Cube sits on top of the bed
 
 # Printing parameters
@@ -146,10 +144,13 @@ mapdl.vatt(1, 4, 1, 0)   # ET=1, MAT=1
 '''
 # Cube: 10x10x10 mm on top of bed
 
-mapdl.block((bed_x - cube_dim) / 2, (bed_x + cube_dim) / 2, (bed_y - cube_dim) / 2, (bed_y + cube_dim) / 2, cube_z_offset, cube_z_offset + 0.01)
-mapdl.vsel("S", "LOC", "Z", bed_z, cube_dim+bed_z)
+mapdl.block((bed_x - cube_dim) / 2, (bed_x + cube_dim) / 2, (bed_y - cube_dim) / 2, (bed_y + cube_dim) / 2, cube_z_offset, cube_z_offset + 0.05)
+#mapdl.cylind(0.5, 1, z1=0, z2=0.1)
+#mapdl.nummrg("kp")
+mapdl.vsel("S", "LOC", "Z", 0, 0.1)
 mapdl.cm("CUBE", "VOLU")
 mapdl.vatt(2, 1, 1, 0)
+
 #==========================================================
 #Mesh Generation
 #mapdl.vplot()
@@ -165,10 +166,10 @@ ms = mapdl.vmesh("ALL")
 print(ms)'''
 
 mapdl.cmsel("S", "CUBE")
-mapdl.esize(layer_height)  # Finer mesh
+mapdl.esize(0.004)     # global element size # Finer mesh
 ms = mapdl.vmesh("ALL")
 print(ms)
-mapdl.cdwrite("DB", "mesh", "cdb")
+
 #===============================================================================================================================
 
 def contact_region(mapdl,Contact,target,c_pos,TCC=1000):
@@ -233,9 +234,6 @@ def local_contact(mapdl,el_num,geom2 = "Print_contact",TCC=1000,pin_r = 0.01):
         mapdl.r(1, r1=pinball_radius, r2=tcc)
         mapdl.real(1)
         mapdl.allsel()'''
-
-        
-
         mapdl.allsel()
 
         mapdl.esel("S","ELEM","",el_num)
@@ -271,7 +269,6 @@ def kill_print(mapdl,Print_body):
     mapdl.esel("S","LIVE")
     live = mapdl.get_value("ELEM", item1="COUNT")
     print("Number of live elements after kill:",live)
-    
 
 #contact_region(mapdl,"CUBE","BED",0.02)
 #f = part_elem(mapdl,"CUBE")
@@ -351,6 +348,7 @@ def solve_temp(mapdl,el_num,deposition_temp = 190,dt=0.02,i=0):
     mapdl.allsel()
     mapdl.esel("NONE")
     mapdl.esel("S","ELEM","",el_num)
+    mapdl.cm(f"Elem_{el_num}","ELEM")
     mapdl.ealive("ALL")
     mapdl.nsle("S") 
     mapdl.d("ALL", "TEMP", deposition_temp)
@@ -400,12 +398,17 @@ def initiate_solve(mapdl,geom = "CUBE",dep_temp = 190,current_time = 0.0, elemen
     mapdl.allsel()
     apply_bc(mapdl,190,75.0,60.0)
     el_list = part_elem(mapdl,geom)
-    steps = 40
+    for elf in el_list:
+        mapdl.allsel()
+        mapdl.esel("S","ELEM","",elf)
+        mapdl.cm(f"Elem_{elf}","ELEM")
+    steps = int(len(el_list))
     for i in range(0,steps):
         solve_temp(mapdl,el_list[i],dep_temp,dt,i)  # Activate first element
         current_time+=element_duration
-        print("Progress:",current_time*100/(steps*0.5))
+        print("Progress:",'%.2f'%(current_time*100/(steps*0.1)))
         mapdl.time(current_time)
+
 
 #==============================================================================Solve_==========================================
 '''
@@ -417,8 +420,8 @@ id_val = 0
 setup_path(mapdl,elem_map_id,elem)
 '''
 
-element_duration = 0.5
-time_steps_per_element = 5
+element_duration = 0.1
+time_steps_per_element = 2
 dt = element_duration / time_steps_per_element
 current_time = 0.0
 
@@ -426,14 +429,18 @@ initiate_solve(mapdl,"CUBE",190,current_time,element_duration,time_steps_per_ele
 mapdl.post1()
 nsets = mapdl.result.nsets 
 print(f"Number of result sets: {nsets}")
+mapdl.save()
+print("END")
+
 
 #==================================================================================================
 # animate temperature result
-
-
+mapdl.post1()
+mapdl.allsel()
 frames = []
 frames2 = []
 
+#create frame after simulation
 def res_temp_frame(mapdl, time, i):
     mapdl.esel("S", "LIVE")
     mapdl.nsle("S")
@@ -444,7 +451,7 @@ def res_temp_frame(mapdl, time, i):
         clim = [165, 190],
         savefig=f"frames_temp/frame_{i:03d}.png",
         background="white",
-        cpos=[(0.28, 0.28, 0.07),
+        cpos=[(0.025, 0.025, 0.3),
             (0.3, 0.3, 0.025),
             (0, 0, 1)],
         scalar_bar_args={
@@ -458,7 +465,7 @@ def res_temp_frame(mapdl, time, i):
         off_screen=True,
     )
     frames.append(imageio.imread(img_path))
-mapdl.post_processing.plot_nodal_thermal_principal_strain
+
 #strain result 
 def res_strain_frame(mapdl, time, i):
     mapdl.esel("S", "LIVE")
@@ -468,11 +475,11 @@ def res_strain_frame(mapdl, time, i):
         show_edges=True,
         savefig=f"frames_strain/frame_{i:03d}.png",
         background="white",
-        cpos=[(0.28, 0.28, 0.07),
+        cpos=[(0.025, 0.025, 0.3),
             (0.3, 0.3, 0.025),
             (0, 0, 1)],
         scalar_bar_args={
-            "title": "Thermal_Strain",
+            "title": f"Thermal_Strain{mapdl.post_processing.time}",
             "title_font_size": 16,
             "label_font_size": 14,
             "vertical": True
@@ -483,38 +490,66 @@ def res_strain_frame(mapdl, time, i):
     )
     frames2.append(imageio.imread(img_path))
 
+ldstep = 2
 substep = 1
-ldstep = 1
-current_time = 0
-dt = 0.1
 
 et1 = []
+et2 = []
+et3 = []
 
-for i in range(1,nsets+1):
+es1 = []
+es2 = []
+es3 = []
+
+
+for i in range(1,nsets):
     current_time+=dt
-    if (i-1)%5==0:
-        mapdl.set(substep,"LAST")
+    if (i)%2!=0:
+        mapdl.set(ldstep,substep)
         print("substep:",mapdl.post_processing.time)
-        ldstep += 1
+        substep += 1
         res_temp_frame(mapdl,current_time,i)
-        #res_strain_frame(mapdl,current_time,i)
-        et1.append(np.mean(mapdl.post_processing.element_temperature()))
+        res_strain_frame(mapdl,current_time,i)
+        temp = mapdl.post_processing.element_temperature()
+        et1.append(np.mean(temp))
+        et2.append(np.max(temp))
+        et3.append(np.min(temp))
         
-    if i%5==0:
-        ldstep = 1
-        substep += 1 
-        mapdl.set(substep,ldstep)
+        stress = mapdl.post_processing.element_stress('EQV')
+        es1.append(np.mean(stress))
+        es2.append(np.max(stress))
+        es3.append(np.min(stress))
+    if i%2==0:
+        
+        mapdl.set(ldstep,substep)
+        ldstep += 1
+        substep = 1 
         print("loadstep:",mapdl.post_processing.time)      
-imageio.mimsave("temp_animation.gif", frames, fps = 2)
-imageio.mimsave("strain_animation.gif", frames2, fps = 2)
-print(et1)
+imageio.mimsave("temp_animation.gif", frames, fps = 30)
+imageio.mimsave("strain_animation.gif", frames2, fps = 30)
+
 
 time = np.linspace(0.1,current_time, len(et1))
-plt.plot(time, et1,linestyle='-.', marker='o', color='b')
+plt.plot(time, et1,linestyle='-.', marker='.', color='g')
+plt.plot(time,et2,linestyle="-.",marker = ".", color = 'r')
+plt.plot(time,et3,linestyle="-.",marker = ".", color = 'b')
 plt.xlabel('Time [s]')
-plt.ylabel('Mean Temperature [C]')
-plt.title('TemperatureProfiles')
+plt.ylabel('Temperature [C]')
+plt.legend(['MEAN Temp','MAX Temp','MIN Temp'])
+plt.title('Transient Temperature')
 plt.savefig("Mean_Temp_plot.png")
+
+time = np.linspace(0.1,current_time, len(es1))
+plt.plot(time, es1,linestyle='-.', marker='.', color='g')
+plt.plot(time,es2,linestyle="-.",marker = ".", color = 'r')
+plt.plot(time,es3,linestyle="-.",marker = ".", color = 'b')
+plt.xlabel('Time [s]')
+plt.ylabel('Stress [Pa]')
+plt.legend(['MEAN Stress','MAX Stress','MIN Stress'])
+plt.title('Transient Stress')
+plt.savefig("Mean_Stress_plot.png")
+
+
 print(mapdl.post_processing.element_temperature())
 def final_results_processing(mapdl, results_data, total_elements, params):
     """Final results processing and visualization"""
@@ -628,4 +663,6 @@ plt.xlabel('Time [s]')
 plt.ylabel('Stress [Pa]')
 plt.title('Stress Profiles')
 plt.show()'''
+
+
 mapdl.exit() 
