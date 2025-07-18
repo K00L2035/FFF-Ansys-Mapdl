@@ -166,11 +166,14 @@ ms = mapdl.vmesh("ALL")
 print(ms)'''
 
 mapdl.cmsel("S", "CUBE")
-mapdl.esize(0.004)     # global element size # Finer mesh
+mapdl.esize(0.01)     # global element size # Finer mesh
 ms = mapdl.vmesh("ALL")
 print(ms)
 
 #===============================================================================================================================
+# define contact between bed and print 
+# not in use currently
+
 
 def contact_region(mapdl,Contact,target,c_pos,TCC=1000):
 
@@ -234,6 +237,7 @@ def local_contact(mapdl,el_num,geom2 = "Print_contact",TCC=1000,pin_r = 0.01):
         mapdl.r(1, r1=pinball_radius, r2=tcc)
         mapdl.real(1)
         mapdl.allsel()'''
+
         mapdl.allsel()
 
         mapdl.esel("S","ELEM","",el_num)
@@ -248,8 +252,8 @@ def local_contact(mapdl,el_num,geom2 = "Print_contact",TCC=1000,pin_r = 0.01):
         mapdl.esel("S","Type","",3)
         numb_cont_elem = int(mapdl.get_value("ELEM",item1 = "COUNT"))
         print(f"Number of contact created = {numb_cont_elem}")
-    
 
+#======================================================================================================================
 def part_elem(mapdl,p_name):
     mapdl.cmsel("S",p_name)
     mapdl.eslv("S")
@@ -269,6 +273,7 @@ def kill_print(mapdl,Print_body):
     mapdl.esel("S","LIVE")
     live = mapdl.get_value("ELEM", item1="COUNT")
     print("Number of live elements after kill:",live)
+    
 
 #contact_region(mapdl,"CUBE","BED",0.02)
 #f = part_elem(mapdl,"CUBE")
@@ -295,7 +300,8 @@ def apply_bc(mapdl,geom = "CUBE",conv_coeff = 25.0, ambient_temp = 60.0):
     conv_bcnodes = mapdl.mesh.nnum
     print("Number of nodes with convection BC:", len(conv_bcnodes))
 
-
+#====================================select elemnts in tool path ===================================================================
+#currently not used in program
 
 def setup_path(mapdl,elem_map_id,elem):
     for eid in elem:
@@ -341,36 +347,147 @@ def generate_linear_toolpath(x1,x2,y1,y2,z1,z2,step_size, num_layers):
                 layer_points.append([x, y, z_layer])
         path_points_by_layer.append(layer_points)
     return path_points_by_layer
+time = []
+temp_prof = np.empty((3,0))
 
+#=========================================================================plotting========================================
+# for creating the plots and show results 
+from matplotlib import cm
+def scatter_hist(x, y, ax, ax_histx, ax_histy,tvar=[],t = []):
+    # no labels
+    #ax_histx.tick_params(axis="x", labelbottom=False)
+    #ax_histy.tick_params(axis="y", labelleft=False)
+
+    # the scatter plot:
+    cmap = plt.cm.get_cmap('viridis')
+
+    # Normalize y to 0–1 for colormap
+    norm_y = (y - np.min(y)) / (np.max(y) - np.min(y))
+
+    # Stem plot returns: markerline, stemlines, baseline
+    markerline, stemlines, baseline = ax.stem(x, y, bottom=1.1)
+
+    # Apply color to each stem and marker
+    cmap = cm.get_cmap('viridis')
+    colors = cmap(norm_y)
+
+# stemlines and markerline are LineCollection:
+    stemlines.set_color(colors)
+
+    # Markers are Line2D objects too:
+    # markerline is a Line2D, so set color for all markers
+    ax.set_ylim([np.min(y)-np.min(y)/500,np.max(y)+np.min(y)/500])
+    
+    
+    # now determine nice limits by hand:
+    binwidth = 5
+    xymax = np.max(np.abs(y))
+    binwidth2 = np.abs(np.min(y)-np.max(y))/10
+    if binwidth2==0:
+        binwidth2 = 0.5
+    lim2 = (int(xymax/binwidth2) + 1) * binwidth2
+
+    bins2 = np.arange(np.min(y)-binwidth2, lim2 + binwidth2, binwidth2)
+    ax_histx.plot(t, tvar[0], linestyle='--', marker='.', color='r', label='Max Temp')
+    ax_histx.plot(t, tvar[1], linestyle='-', marker='.', color='g', label='Mean Temp')
+    ax_histx.plot(t, tvar[2], linestyle='-', marker='.', color='b', label='Min Temp')
+    ax_histx.legend(loc='best')
+    # Set xlim and ylim for the stem plot
+    ax_histx.set_xlim([np.min(t), np.max(t)])
+    ax_histx.set_ylim([np.min(tvar[2]), 190.2])
+    ax_histy.hist(y, bins=bins2, orientation='horizontal')
+    
+def plot_res(mapdl,i):
+    global temp_prof
+    global time
+    mapdl.allsel()
+    mapdl.esel("S","LIVE")
+    #mapdl.nsle("S")
+    node_ids = mapdl.mesh.enum
+    temps = []
+    stress = []
+    disp = []
+    for id in node_ids:
+        mapdl.esel("S","ELEM","",id)
+        mapdl.nsle("S")
+        temp1 = mapdl.post_processing.nodal_temperature()
+        strain1=mapdl.post_processing.nodal_thermal_principal_strain('1')
+        disp1 = mapdl.post_processing.nodal_displacement()
+        temps.append(np.mean(temp1))
+        stress.append(np.mean(strain1))
+        disp.append(np.max(disp1))
+    new_col = np.array([[np.max(temps)], [np.mean(temps)],[np.min(temps)]])
+    temp_prof = np.hstack((temp_prof, new_col))
+    fig, axs = plt.subplot_mosaic([['histx', '.'],
+                            ['scatter', 'histy']],
+                            figsize=(10, 10),
+                            width_ratios=(7, 1), height_ratios=(4, 4),
+                            layout='constrained')
+    scatter_hist(node_ids, temps, axs['scatter'], axs['histx'], axs['histy'],temp_prof,time)
+    axs['scatter'].set_xlabel('Node ID')
+    axs['scatter'].set_ylabel('Temperature [C]')
+    axs['scatter'].set_title('Node Temperature Scatter')
+# Histogram X
+    axs['histx'].set_title('Transient Temperature')
+    axs['histx'].set_xlabel("Time[s]")
+    axs['histx'].set_ylabel("Temperature[s]")
+# Histogram Y
+    axs['histy'].set_title('Temperature \nDistribution')
+    
+    fig.suptitle('Element Stress Analysis', fontsize=16)
+    fig.savefig(f"plots/Mean_Temp_plot_{i}.png")
+    plt.close("all")
+    fig, axs = plt.subplot_mosaic([['histx', '.'],
+                            ['scatter', 'histy']],
+                            figsize=(10, 10),
+                            width_ratios=(7, 1), height_ratios=(4, 4),
+                            layout='constrained')
+    scatter_hist(node_ids, stress, axs['scatter'], axs['histx'], axs['histy'],temp_prof,time)
+    axs['scatter'].tick_params(axis = "x",top = True,bottom = False,labeltop = True,labelbottom = False)
+    axs['scatter'].set_xlabel('Node ID')
+    axs['scatter'].set_ylabel('Strain [C]')
+    axs['scatter'].set_title('Node Strain Scatter')
+# Histogram X
+    axs['histx'].set_title('Node ID Distribution')
+    axs['histx'].set_xlabel("Time[s]")
+    axs['histx'].set_ylabel("Temperature[s]")
+
+# Histogram Y
+    axs['histy'].set_title('Strain \nDistribution')
+    fig.suptitle('Element strain Analysis', fontsize=16)
+    fig.savefig(f"plots/Mean_Strain_plot_{i}.png")
+    plt.close("all")
+
+#===========================================================================Solver setup=================================
 
 
 def solve_temp(mapdl,el_num,deposition_temp = 190,dt=0.02,i=0):
     mapdl.allsel()
     mapdl.esel("NONE")
     mapdl.esel("S","ELEM","",el_num)
-    mapdl.cm(f"Elem_{el_num}","ELEM")
     mapdl.ealive("ALL")
     mapdl.nsle("S") 
     mapdl.d("ALL", "TEMP", deposition_temp)
     #mapdl.bf("ALL","HGEN",5)
     mapdl.sf("ALL", "CONV",75.0, 60.0)  # Apply convection to all nodes
+    
     #local_contact(mapdl,el_num)
     mapdl.allsel()    
     mapdl.solve() # Clear temperature boundary conditions
-    mapdl.ddele("ALL","TEMP")
     mapdl.allsel()
-    mapdl.save()
+    mapdl.ddele("ALL","TEMP")
+    
     #mapdl.nsle("S")
     '''mapdl.esel("S","LIVE")
     mapdl.esel("U","ELEM","",el_num)  # Select the element
     mapdl.nsle("S")'''
-    mapdl.allsel()
-    node_ids = mapdl.mesh.nnum
-    temps = mapdl.post_processing.nodal_temperature()   
+    
+    plot_res(mapdl,i)
+
     #temp2 = temps[:len(node_ids)]  # Ensure temps matches node_ids length
     '''for nid, t in zip(node_ids, temps): 
         mapdl.ic(nid, 'TEMP', t)'''
-
+    
 
 def initiate_solve(mapdl,geom = "CUBE",dep_temp = 190,current_time = 0.0, element_duration=1, time_steps_per_element=5):
     dt = element_duration / time_steps_per_element
@@ -398,17 +515,16 @@ def initiate_solve(mapdl,geom = "CUBE",dep_temp = 190,current_time = 0.0, elemen
     mapdl.allsel()
     apply_bc(mapdl,190,75.0,60.0)
     el_list = part_elem(mapdl,geom)
-    for elf in el_list:
-        mapdl.allsel()
-        mapdl.esel("S","ELEM","",elf)
-        mapdl.cm(f"Elem_{elf}","ELEM")
-    steps = int(len(el_list))
+    steps = 50
+    
     for i in range(0,steps):
+        time.append(current_time)
         solve_temp(mapdl,el_list[i],dep_temp,dt,i)  # Activate first element
         current_time+=element_duration
         print("Progress:",'%.2f'%(current_time*100/(steps*0.1)))
+        
         mapdl.time(current_time)
-
+    
 
 #==============================================================================Solve_==========================================
 '''
@@ -431,16 +547,13 @@ nsets = mapdl.result.nsets
 print(f"Number of result sets: {nsets}")
 mapdl.save()
 print("END")
-
-
 #==================================================================================================
 # animate temperature result
 mapdl.post1()
-mapdl.allsel()
+
 frames = []
 frames2 = []
 
-#create frame after simulation
 def res_temp_frame(mapdl, time, i):
     mapdl.esel("S", "LIVE")
     mapdl.nsle("S")
@@ -448,7 +561,7 @@ def res_temp_frame(mapdl, time, i):
     mapdl.post_processing.plot_nodal_temperature(
         show_edges=True,
         cmap = "plasma",
-        clim = [165, 190],
+        
         savefig=f"frames_temp/frame_{i:03d}.png",
         background="white",
         cpos=[(0.025, 0.025, 0.3),
@@ -489,7 +602,7 @@ def res_strain_frame(mapdl, time, i):
         off_screen=True,
     )
     frames2.append(imageio.imread(img_path))
-
+'''
 ldstep = 2
 substep = 1
 
@@ -504,13 +617,13 @@ es3 = []
 
 for i in range(1,nsets):
     current_time+=dt
-    if (i)%2!=0:
+    if (i)%3!=0:
         mapdl.set(ldstep,substep)
         print("substep:",mapdl.post_processing.time)
         substep += 1
         res_temp_frame(mapdl,current_time,i)
-        res_strain_frame(mapdl,current_time,i)
-        temp = mapdl.post_processing.element_temperature()
+        #res_strain_frame(mapdl,current_time,i)
+        #temp = mapdl.post_processing.element_temperature()
         et1.append(np.mean(temp))
         et2.append(np.max(temp))
         et3.append(np.min(temp))
@@ -519,14 +632,14 @@ for i in range(1,nsets):
         es1.append(np.mean(stress))
         es2.append(np.max(stress))
         es3.append(np.min(stress))
-    if i%2==0:
+    if i%3==0:
         
         mapdl.set(ldstep,substep)
         ldstep += 1
         substep = 1 
         print("loadstep:",mapdl.post_processing.time)      
-imageio.mimsave("temp_animation.gif", frames, fps = 30)
-imageio.mimsave("strain_animation.gif", frames2, fps = 30)
+#imageio.mimsave("temp_animation.gif", frames, fps = 30)
+#imageio.mimsave("strain_animation.gif", frames2, fps = 30)
 
 
 time = np.linspace(0.1,current_time, len(et1))
@@ -549,7 +662,8 @@ plt.legend(['MEAN Stress','MAX Stress','MIN Stress'])
 plt.title('Transient Stress')
 plt.savefig("Mean_Stress_plot.png")
 
-
+'''
+mapdl.allsel()
 print(mapdl.post_processing.element_temperature())
 def final_results_processing(mapdl, results_data, total_elements, params):
     """Final results processing and visualization"""
